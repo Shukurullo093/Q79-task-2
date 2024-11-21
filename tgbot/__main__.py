@@ -9,9 +9,9 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from tgbot import handlers
-from tgbot.data import config
-
+import handlers
+from data import config
+from models.models import async_main
 
 def setup_logging():
     log_level = logging.INFO
@@ -19,30 +19,25 @@ def setup_logging():
     logger = logging.getLogger(__name__)
     logger.info("Starting bot")
 
-
 def setup_handlers(dp: Dispatcher) -> None:
     dp.include_router(handlers.setup())
 
-
 def setup_middlewares(dp: Dispatcher) -> None:
     pass
-
 
 async def setup_aiogram(dp: Dispatcher) -> None:
     setup_handlers(dp)
     setup_middlewares(dp)
 
-
 async def aiogram_on_startup_polling(dispatcher: Dispatcher, bot: Bot) -> None:
     await setup_aiogram(dispatcher)
-
 
 async def aiogram_on_shutdown_polling(dispatcher: Dispatcher, bot: Bot) -> None:
     await bot.session.close()
     await dispatcher.storage.close()
 
-
 async def main():
+    await async_main()
     setup_logging()
     session = AiohttpSession(
         json_loads=orjson.loads,

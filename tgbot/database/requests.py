@@ -11,7 +11,6 @@ async def has_user(tg_id) -> bool:
 async def register_user(reg):
     async with async_session() as session:
         # user = await session.scalar(select(User).where(User.tg_id == int(reg['tg_id'])))
-
         if not await has_user(reg['tg_id']):
             new_user = User(tg_id = reg['tg_id'], 
                             first_name = reg['first_name'],
@@ -19,7 +18,9 @@ async def register_user(reg):
                             phone_number = reg['phone_number'],
                             tg_username = reg['tg_username'],
                             notion_token = reg['notion_token'],
-                            created_date = datetime.datetime.now())
+                            database_id = reg['database_id'],
+                            # created_date = datetime.datetime.now()
+                            )
             session.add(new_user)
             await session.commit()
             return True
@@ -31,6 +32,16 @@ async def set_token(token) -> None:
             stmt = update(User).where(User.tg_id == token['tg_id']).values(notion_token = token['notion_token'])
             await session.execute(stmt)
             await session.commit()
+
+async def get_token_and_db_id(tg_id):
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.tg_id == tg_id))
+        return user
+    
+async def get_category(category_id) -> Category:
+    async with async_session() as session:
+        category = await session.scalar(select(Category).where(Category.id == category_id))
+        return category
 
 async def get_categories(tg_id):
     async with async_session() as session:

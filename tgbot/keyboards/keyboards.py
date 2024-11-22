@@ -1,11 +1,18 @@
 from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton,
                            InlineKeyboardMarkup, InlineKeyboardButton)
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from database.requests import get_categories
+
+from models.models import Priority
 
 main = ReplyKeyboardMarkup(keyboard = [
     [KeyboardButton(text="Register")]],
     resize_keyboard = True, input_field_placeholder="Please register"
+)
+
+help = ReplyKeyboardMarkup(keyboard = [
+    [KeyboardButton(text="How to find Notion Token(API Key)"),
+     KeyboardButton(text="How to find Notion Database ID")]],
+    resize_keyboard = True
 )
 
 share_contact = ReplyKeyboardMarkup(keyboard = [
@@ -14,7 +21,7 @@ share_contact = ReplyKeyboardMarkup(keyboard = [
 )
 
 main_menu = ReplyKeyboardMarkup(keyboard= [
-    [KeyboardButton(text="Save new link"), KeyboardButton(text="List of links")],
+    [KeyboardButton(text="🆕 Save new link 🔗"), KeyboardButton(text="List of links")],
     [KeyboardButton(text="Categories"), KeyboardButton(text="Help")],
 ], resize_keyboard=True)
 
@@ -27,4 +34,21 @@ async def categories(all_categories):
 
 create_category = InlineKeyboardMarkup(inline_keyboard = [
     [InlineKeyboardButton(text='Create New 🆕', callback_data = 'create_category')] 
+])
+
+async def priorities():
+    keyboard = InlineKeyboardBuilder()    
+    for priority in (Priority):
+        keyboard.add(InlineKeyboardButton(text=priority.name, callback_data=f"priority_{priority.value}"))
+    return keyboard.adjust(1).as_markup()
+
+links_btm = InlineKeyboardMarkup(inline_keyboard = [
+    [
+        InlineKeyboardButton(text='Title A->Z', callback_data = 'title_a_z'), 
+        InlineKeyboardButton(text='Title Z->A', callback_data = 'title_z_a')
+    ],
+    [
+        InlineKeyboardButton(text='Priority low to high', callback_data = 'priority_l_h'),
+        InlineKeyboardButton(text='Priority high to low', callback_data = 'priority_h_l')
+    ]
 ])

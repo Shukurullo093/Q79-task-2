@@ -1,7 +1,7 @@
 from aiogram.types import (ReplyKeyboardMarkup, KeyboardButton,
                            InlineKeyboardMarkup, InlineKeyboardButton)
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-# from app.database.requests import get_categories, get_category_item
+from database.requests import get_categories
 
 main = ReplyKeyboardMarkup(keyboard = [
     [KeyboardButton(text="Register")]],
@@ -13,39 +13,18 @@ share_contact = ReplyKeyboardMarkup(keyboard = [
     resize_keyboard = True
 )
 
-# main = InlineKeyboardMarkup(inline_keyboard = [
-#     [InlineKeyboardButton(text='Catalog', callback_data = 'catalog')],
-#     [InlineKeyboardButton(text='Basket', callback_data = 'basket'),
-#      InlineKeyboardButton(text='Contacts', callback_data = 'contacts')]
-# ])
-"""
-async def categories():
-    all_categories = await get_categories()
-    # print(all_categories)
-    keyboard = InlineKeyboardBuilder()
+main_menu = ReplyKeyboardMarkup(keyboard= [
+    [KeyboardButton(text="Save new link"), KeyboardButton(text="List of links")],
+    [KeyboardButton(text="Categories"), KeyboardButton(text="Help")],
+], resize_keyboard=True)
+
+async def categories(all_categories):
+    keyboard = InlineKeyboardBuilder()    
+    keyboard.add(InlineKeyboardButton(text="Create New 🆕", callback_data="create_category"))
     for category in all_categories:
         keyboard.add(InlineKeyboardButton(text=category.name, callback_data=f"category_{category.id}"))
-    keyboard.add(InlineKeyboardButton(text="Menu", callback_data="to_main"))
-    return keyboard.adjust(2).as_markup()
+    return keyboard.adjust(1).as_markup()
 
-async def items(category_id):
-    all_items = await get_category_item(category_id)
-    keyboard = InlineKeyboardBuilder()
-    for item in all_items:
-        keyboard.add(InlineKeyboardButton(text=item.name, callback_data=f"item_{item.id}"))
-    keyboard.add(InlineKeyboardButton(text="Menu", callback_data="to_main"))
-    return keyboard.adjust(2).as_markup()
-
-
-settings = InlineKeyboardMarkup(inline_keyboard = [
-    [InlineKeyboardButton(text='You Tube', url='https://youtube.com/@sudoteach')]
+create_category = InlineKeyboardMarkup(inline_keyboard = [
+    [InlineKeyboardButton(text='Create New 🆕', callback_data = 'create_category')] 
 ])
-
-cars = ['Tesla', 'Audi', 'BMW']
-
-async def inline_cars():
-    keyboard = InlineKeyboardBuilder()
-    for car in cars:
-        keyboard.add(InlineKeyboardButton(text = car, url='https://youtube.com/@sudoteach'))
-    return keyboard.adjust(2).as_markup()
-"""

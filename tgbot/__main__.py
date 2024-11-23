@@ -35,6 +35,7 @@ async def aiogram_on_startup_polling(dispatcher: Dispatcher, bot: Bot) -> None:
 async def aiogram_on_shutdown_polling(dispatcher: Dispatcher, bot: Bot) -> None:
     await bot.session.close()
     await dispatcher.storage.close()
+    print('\n\n')
 
 async def main():
     await async_main()

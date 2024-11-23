@@ -38,4 +38,3 @@ def setup() -> Router:
     router.callback_query.register(cm.sort_links_by_title, F.data.startswith('sort_'))
 
     return router
-# ⬆️⬇️↘️↗️

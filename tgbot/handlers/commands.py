@@ -3,6 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from aiogram.types import ReplyKeyboardRemove
+from notion_client import Client
 from aiogram import Bot
 import re
 from bs4 import BeautifulSoup
@@ -73,20 +74,40 @@ async def reg_notion_token(message: Message, state: FSMContext):
     answer = "Enter your Notion token"
     await message.answer(answer, reply_markup=ReplyKeyboardRemove())
 
-async def reg_database_id(message: Message, state: FSMContext):
-    await state.update_data(notion_token=message.text)
-    await state.set_state(Reg.database_id)
-    answer = "Enter your Notion database ID"
-    await message.answer(answer, reply_markup=ReplyKeyboardRemove())
+async def reg_database_id(message: Message, state: FSMContext, bot: Bot):
+    try:
+        # animation = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fgifer.com%2Fen%2Fgifs%2Fwait&psig=AOvVaw129VUyJTWajLiM4J-mGqNr&ust=1732465982821000&source=images&cd=vfe&opi=89978449&ved=0CBMQjRxqFwoTCICS8vDw8okDFQAAAAAdAAAAABAE"
+        # msg = await message.answer_animation(animation, caption="Please wait, fetching data...")
+        client = Client(auth=message.text)
+        user=client.users.me()
+        import time
+        time.sleep(5)
+        await state.update_data(notion_token=message.text)
+        await state.set_state(Reg.database_id)
+        answer = "Enter your Notion database ID"
+        # await bot.delete_message(msg.from_user.id, msg.message.message_id)
+        await message.answer(answer, reply_markup=ReplyKeyboardRemove())
+    except:
+        await state.set_state(Reg.notion_token)
+        answer = "Your token is invalid\nEnter your Notion token again"
+        await message.answer(answer, reply_markup=ReplyKeyboardRemove())
 
 async def reg_finish(message: Message, state: FSMContext):
-    await state.update_data(database_id=message.text)
-    data = await state.get_data()
-    response = await rq.register_user(data)
-    if response:
-        await message.answer(f'You have successfully registered.\nFirstname: <b>{data["first_name"]}</b>\nLastname: {data["last_name"]}\nPhone number: {data["phone_number"]}\nDatabase ID: @{data["database_id"]}\nNotion token: {data["notion_token"]}', reply_markup=kb.main_menu)
-    else: await message.answer("You have already registered", reply_markup=kb.main_menu)
-    await state.clear()
+    try:
+        token = await state.get_value('notion_token')
+        client = Client(auth=token)
+        db = client.databases.retrieve(message.text)
+        await state.update_data(database_id=message.text)
+        data = await state.get_data()
+        response = await rq.register_user(data)
+        if response:
+            await message.answer(f'You have successfully registered.\nFirstname: <b>{data["first_name"]}</b>\nLastname: {data["last_name"]}\nPhone number: {data["phone_number"]}\nDatabase ID: {data["database_id"]}\nNotion token: {data["notion_token"]}', reply_markup=kb.main_menu)
+        else: await message.answer("You have already registered", reply_markup=kb.main_menu)
+        await state.clear()
+    except: 
+        await state.set_state(Reg.database_id)
+        answer = "Your database ID is invalid\nEnter your database ID again"
+        await message.answer(answer, reply_markup=ReplyKeyboardRemove())
 
 async def set_token(message: Message, state: FSMContext):
     await state.set_state(Token.tg_id)
@@ -279,10 +300,10 @@ async def save_link_to_notion_db(user, link):
 
 async def create_page(headers, data: dict, db_id):
     create_url = "https://api.notion.com/v1/pages"
-    print(db_id)
+    # print(db_id)
     payload = {"parent": {"database_id": db_id}, "properties": data}
     res = requests.post(create_url, headers=headers, json=payload)
-    print(res.status_code)
+    # print(res.status_code)
     return res
 
 # ------------------------------------------------------------
@@ -328,7 +349,7 @@ async def get_saved_links_from_notion(db_id, notion_token, num_pages=None):
                 if type == 'created_time':
                     date_format = "%Y-%m-%dT%H:%M:%S.%fZ"
                     date_object = datetime.strptime(col, date_format)
-                    created_time = f"{date_object.day}-{date_object.month}-{date_object.year}_{date_object.hour+5}:{date_object.minute}"
+                    created_time = f"{date_object.day}-{date_object.month}-{date_object.year} {date_object.hour+5}:{date_object.minute}"
                     # print("time zone ", date_object)
                     row[table_header] = created_time
                 else: row[table_header] = col

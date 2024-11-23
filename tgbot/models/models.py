@@ -42,13 +42,13 @@ class Priority(enum.Enum):
 #     forward_from: Mapped[str] = mapped_column(String(30))
 #     forward_user: Mapped[int] = mapped_column()
 
-class Link(Base):
-    __tablename__ = "links"
+# class Link(Base):
+#     __tablename__ = "links"
 
-    title: Mapped[str] = mapped_column(String())
-    category: Mapped[int] = mapped_column(ForeignKey('categories.id'))
-    priority = mapped_column(Enum(Priority))
-    created_date = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now()) 
+#     title: Mapped[str] = mapped_column(String())
+#     category: Mapped[int] = mapped_column(ForeignKey('categories.id'))
+#     priority = mapped_column(Enum(Priority))
+#     created_date = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now()) 
 
 async def async_main():
     async with engine.begin() as conn:

@@ -3,8 +3,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import Message, CallbackQuery
 from aiogram.types import ReplyKeyboardRemove
+from aiogram import Bot
 import re
+from bs4 import BeautifulSoup
 import requests
+from datetime import datetime
+from operator import itemgetter
 
 import keyboards.keyboards as kb 
 import database.requests as rq
@@ -33,16 +37,19 @@ class Link(StatesGroup):
     category = State()
     priority = State()
 
-async def start_command_handler(message: types.Message):
+async def start_command_handler(message: types.Message, state: FSMContext):
+    await state.clear()
     from_user = message.from_user
     greeting_text = f"Hello, {from_user.full_name}!"
-    # print(await rq.has_user(message.from_user.id))
     if not await rq.has_user(message.from_user.id):
         await message.answer(greeting_text, reply_markup=kb.main)
     else: await message.answer(greeting_text, reply_markup=kb.main_menu)
 
 async def help_command_handler(message: types.Message):
     await message.answer(text=f"FAQ", reply_markup=kb.help)
+
+async def main_menu(message: types.Message):
+    await message.answer(text=f"Main Menu", reply_markup=kb.main_menu)
 
 async def reg_firstname(message: Message, state: FSMContext):
     await state.update_data(tg_id=message.from_user.id)
@@ -78,7 +85,7 @@ async def reg_finish(message: Message, state: FSMContext):
     response = await rq.register_user(data)
     if response:
         await message.answer(f'You have successfully registered.\nFirstname: <b>{data["first_name"]}</b>\nLastname: {data["last_name"]}\nPhone number: {data["phone_number"]}\nDatabase ID: @{data["database_id"]}\nNotion token: {data["notion_token"]}', reply_markup=kb.main_menu)
-    else: await message.answer("You have already registered")
+    else: await message.answer("You have already registered", reply_markup=kb.main_menu)
     await state.clear()
 
 async def set_token(message: Message, state: FSMContext):
@@ -113,6 +120,22 @@ async def set_category_name(message: Message, state: FSMContext):
     await message.answer('New category has created')
     await state.clear()
 
+async def get_category_items(callback: CallbackQuery, bot: Bot):
+    await bot.delete_message(callback.from_user.id, callback.message.message_id)
+    user = await rq.get_token_and_db_id(callback.from_user.id)
+    links = await get_saved_links_from_notion(user.database_id, user.notion_token, 100)
+    new_links = list(filter(lambda link: link['Category'] == callback.data[len('category_items_'):], links))
+    # answer = await link_list_to_answer(new_links)
+    await callback.message.answer("Saved links related to the category", reply_markup=await kb.get_category_items(new_links))
+
+async def get_category_item_details(callback: CallbackQuery, bot: Bot):
+    await bot.delete_message(callback.from_user.id, callback.message.message_id)
+    user = await rq.get_token_and_db_id(callback.from_user.id)
+    links = await get_saved_links_from_notion(user.database_id, user.notion_token, 100)
+    link = list(filter(lambda link: link['id'] == int(callback.data[len('category_item_'):]), links))
+    answer = await link_list_to_answer(list(link))
+    await callback.message.answer(answer)
+
 async def any_message(message: Message):
     if message.forward_origin is not None:
         # print(message.forward_origin)
@@ -130,33 +153,91 @@ async def any_message(message: Message):
 async def save_link(message: Message, state: FSMContext):
     all_categories = await rq.get_categories(message.from_user.id)
     if all_categories:
-        await state.update_data(tg_id = message.from_user.id)
         await state.set_state(Link.title)
-        await message.answer('Send me url or (title & url)')
+        await message.answer('Send me url or (title & url)', reply_markup=ReplyKeyboardRemove())
     else:
         await message.answer("You cannot save new link.\nBecause you don't have any category to choose\nPlease, At first, create new category in categories menu")
 
 async def save_link_title_and_url(message: Message, state: FSMContext):
     content = (message.text or message.caption)
-    if len(re.findall("(?P<url>https?://[^\s]+)", content)) > 0:
-        url = re.findall("(?P<url>https?://[^\s]+)", content)[0]
-        # title = re.match(r'^'+url, content)
-        # print(title)
-        page = requests.get(url)
-        # print(page.status_code)
-        from bs4 import BeautifulSoup
-
-        soup = BeautifulSoup(page.text, 'html.parser')
-        await state.update_data(title = soup.find('title').string)
-        await state.update_data(url = url)
+    all_categories = await rq.get_categories(message.from_user.id)
+    await state.update_data(tg_id = message.from_user.id)
+    url = await state.get_value('url')
+    if url != None:
+        print("#1 [save_link_title_and_url]; url topildi")
+        await state.update_data(title = message.text)
         await state.set_state(Link.category)
-        # print(message.from_user.id)
-        all_categories = await rq.get_categories(message.from_user.id)
-        # print(all_categories)
-        await message.answer('Choose the category', reply_markup=await kb.categories(all_categories))
-    else: 
-        await state.clear()
-        await message.answer('Sizning xabaringizda url manzil topilmadi')
+        await message.answer('Choose the category', reply_markup=await kb.get_categories(all_categories))
+    else:
+        print("#1 [save_link_title_and_url]; url topilmadi")
+        title_and_urls = await extract_text_and_urls(content)
+        if len(title_and_urls['urls']) > 0:
+            print("#1 [save_link_title_and_url]; url topilmadi -> url bor")
+            await state.update_data(title = title_and_urls['title'])
+            urls = title_and_urls['urls']
+            if len(urls) > 1:
+                print("#1 [save_link_title_and_url]; url topilmadi -> url bor -> url ko'p")
+                await state.set_state(Link.url)
+                await message.answer("Multiple URLs were detected in the message you sent.\nWhich link do you want to save?", reply_markup=await kb.option_links_to_save(urls))
+            else:
+                if not title_and_urls['title']:
+                    print("#1 [save_link_title_and_url]; url topilmadi -> url bor -> url bitta -> title yo'q")
+                    # page = requests.get(urls[0])
+                    # soup = BeautifulSoup(page.text, 'html.parser')
+                    await state.update_data(title = await get_title_from_url(urls[0]))
+                    await state.update_data(url = urls[0])
+                    await state.set_state(Link.category)
+                    # print(message.from_user.id)
+                    # print(all_categories)
+                    await message.answer('Choose the category', reply_markup=await kb.get_categories(all_categories))
+                else:
+                    print("#1 [save_link_title_and_url]; url topilmadi -> url bor -> url bitta -> title bor")
+                    await state.set_state(Link.title)
+                    title = title_and_urls['title']
+                    answer = f"The following text was found in the message you sent.\n<blockquote>{title}</blockquote>\nDo you want to save it as a <b>TITLE</b>?\n"
+                    await state.update_data(url = urls[0])
+                    await message.answer(text=answer, reply_markup=kb.save_title)
+        else: 
+            await state.clear()
+            await message.answer('Sizning xabaringizda url manzil topilmadi')
+
+async def extract_text_and_urls(text):
+    url_pattern = r'https?://\S+|www\.\S+'
+    
+    urls = re.findall(url_pattern, text)
+    
+    text_without_urls = re.sub(url_pattern, '', text)
+    
+    plain_text = re.sub(r'\s+', ' ', text_without_urls).strip()
+    
+    return {
+        'title': plain_text,
+        'urls': urls
+    }
+
+async def save_link_url(callback: CallbackQuery, state: FSMContext):
+    # print(callback.data[len('link_option_'):])
+    await state.update_data(url = callback.data[len('link_option_'):])
+    await state.set_state(Link.title)
+    title = await state.get_value('title')
+    answer = f"The following text was found in the message you sent.\n<blockquote>{title}</blockquote>\nDo you want to save it as a <b>title</b>?\n"
+    await callback.message.answer(text=answer, reply_markup=kb.save_title)
+
+async def choose_link_title(callback: CallbackQuery, state: FSMContext):
+    option = callback.data[len('save_title_'):]
+    if option == 'yes':
+        await state.set_state(Link.category)
+        all_categories = await rq.get_categories(callback.from_user.id)
+        await callback.message.answer('Choose the category', reply_markup=await kb.get_categories(all_categories))
+    elif option == 'no':
+        url = await state.get_value('url')
+        await state.update_data(title = await get_title_from_url(url))
+        await state.set_state(Link.category)
+        all_categories = await rq.get_categories(callback.from_user.id)
+        await callback.message.answer('Choose the category', reply_markup=await kb.get_categories(all_categories))
+    else:
+        await state.set_state(Link.title)
+        await callback.message.answer('Enter the new title')
 
 async def save_link_category(callback: CallbackQuery, state: FSMContext):
     await state.update_data(category = int(callback.data.split('_')[1]))
@@ -168,18 +249,20 @@ async def save_link_priority(callback: CallbackQuery, state: FSMContext):
     priority_name = priorities_name[int(callback.data.split('_')[1])]
     await state.update_data(priority = priority_name)
     data = await state.get_data()
-    # extracted_info = tldextract.extract(data['url'])
-    # domain = f"{extracted_info.subdomain}.{extracted_info.domain}.{extracted_info.suffix}"
-    domain = ''
     data.update({'category': (await rq.get_category(int(data['category']))).name})
-    await callback.message.answer(f"Link saved\n\nTitle: {data['title']}\nURL: {data['url']}\nURL source: {domain}\nCategory: {data['category']}\nPriority: {data['priority']}")
+    await callback.message.answer(f"Link saved\n\nTitle: {data['title']}\nURL: {data['url']}\nCategory: {data['category']}\nPriority: {data['priority']}", reply_markup=kb.main_menu)
     user = await rq.get_token_and_db_id(callback.from_user.id)
     await save_link_to_notion_db(user, data)
     await state.clear()
 
+async def get_title_from_url(url):
+    page = requests.get(url)
+    soup = BeautifulSoup(page.text, 'html.parser')
+    return soup.find('title').string
 # ------------------------------------------------------------
+
 async def save_link_to_notion_db(user, link):
-    print(user.notion_token, link)
+    # print(user.notion_token, link)
     headers = {
         'Authorization': f"Bearer {user.notion_token}",
         'Content-Type': 'application/json',
@@ -205,66 +288,17 @@ async def create_page(headers, data: dict, db_id):
 # ------------------------------------------------------------
 async def get_saved_links(message: Message):
     user = await rq.get_token_and_db_id(message.from_user.id)
+    links = await get_saved_links_from_notion(user.database_id, user.notion_token, 100)
+    answer = await link_list_to_answer(links)
+    await message.answer(answer, reply_markup=kb.links_btm)
+
+async def get_saved_links_from_notion(db_id, notion_token, num_pages=None):
     headers = {
-        'Authorization': f"Bearer {user.notion_token}",
+        'Authorization': f"Bearer {notion_token}",
         'Content-Type': 'application/json',
         'Notion-Version': '2022-06-28'
     }
-    pages = await get_pages(user.database_id, headers, 100)
-    count = 1 ##️⃣
-    # new_table = {}
-    answer = []
-    msg = ''
-    for page in pages:
-        page = page['properties']
-        row = {}
-        for table_header in page.keys():
-            type = page[table_header]['type']
-            type_value = page[table_header][type]
-            if isinstance(type_value, list):
-                col = type_value[0]['text']['content']
-                # column = []
-                # if table_header in new_table:
-                #     column = new_table[table_header]
-                #     column.append(col)
-                row[table_header] = col
-                # msg += f"{table_header}: {col}\n"
-                #     new_table.update({table_header: column})
-                # else:
-                #     column.append(col)
-                #     row[table_header] = col
-                #     new_table[table_header] = list(column)
-            else: 
-                col = type_value
-                # column = []
-                # if table_header in new_table:
-                #     column = new_table[table_header]
-                #     column.append(col)
-                row[table_header] = col
-                # msg += f"{table_header}: {col}\n"
-                    # new_table.update({table_header: column})
-                # else:
-                #     column.append(col)
-                #     row[table_header] = col
-                    # msg += f"{table_header}: {col}\n"
-                    # new_table[table_header] = list(column)
-        answer.append(row)
-    
-    for link in answer:
-        msg += f"\n🔢 {count}\n"
-        count+=1
-        if 'Title' in link:
-            msg += f"Title: {link['Title']}\n"
-        if 'URL' in link:
-            msg += f"URL: {link['URL']}\n"
-        if 'Category' in link:
-            msg += f"Category: {link['Category']}\n"
-        if 'Priority' in link:
-            msg += f"Priority: {link['Priority']}\n"
-    
-    await message.answer(msg.strip(), reply_markup=kb.links_btm)
 
-async def get_pages(db_id, headers, num_pages=None):
     url = f"https://api.notion.com/v1/databases/{db_id}/query"
 
     get_all = num_pages is None
@@ -274,10 +308,64 @@ async def get_pages(db_id, headers, num_pages=None):
     response = requests.post(url, json=payload, headers=headers)
     # print(response.status_code)
     data = response.json()
-    # import json
-    # with open('db.json', 'w', encoding='utf8') as f:
-    #    json.dump(data, f, ensure_ascii=False, indent=4)
-    return data['results']
+    # return data['results']
+    
+    answer = []
+    count = 1
+    for page in data['results']:
+        page = page['properties']
+        row = {}
+        row['id'] = count
+        count += 1
+        for table_header in page.keys():
+            type = page[table_header]['type']
+            type_value = page[table_header][type]
+            if isinstance(type_value, list):
+                col = type_value[0]['text']['content']
+                row[table_header] = col
+            else: 
+                col = type_value
+                if type == 'created_time':
+                    date_format = "%Y-%m-%dT%H:%M:%S.%fZ"
+                    date_object = datetime.strptime(col, date_format)
+                    created_time = f"{date_object.day}-{date_object.month}-{date_object.year}_{date_object.hour+5}:{date_object.minute}"
+                    # print("time zone ", date_object)
+                    row[table_header] = created_time
+                else: row[table_header] = col
+        answer.append(row)
+    return answer
+
+async def link_list_to_answer(list: list):
+    count = 1
+    msg = ''
+    for link in list:
+        msg += f"\n🔢 {count}\n"
+        count += 1
+        if 'Title' in link:
+            msg += f"<blockquote><b><i>Title</i></b>: {link['Title']}\n"
+        if 'URL' in link:
+            msg += f"<b><i>URL</i></b>: {link['URL']}\n"
+        if 'Category' in link:
+            msg += f"<b><i>Category</i></b>: {link['Category']}\n"
+        if 'Priority' in link:
+            msg += f"<b><i>Priority</i></b>: {link['Priority']}\n"
+        if 'Created Time' in link:
+            msg += f"<b><i>Created Time</i></b>: {link['Created Time']} </blockquote> \n"
+    return msg.strip()
+
+async def sort_list_by_arg(list: list, key: str, reverse = False):
+    return sorted(list, key = itemgetter(key), reverse = reverse)
+
+async def sort_links_by_title(callback: CallbackQuery, bot: Bot):
+    await bot.delete_message(callback.from_user.id, callback.message.message_id)
+    user = await rq.get_token_and_db_id(callback.from_user.id)
+    links = await get_saved_links_from_notion(user.database_id, user.notion_token, 100)
+    if callback.data != 'sort_default':
+        key = callback.data[len('sort_reverse_'):] if callback.data.startswith('sort_reverse_') else callback.data[len('sort_'):]
+        links = await sort_list_by_arg(links, key.capitalize(), callback.data.startswith('sort_reverse_'))
+
+    answer = await link_list_to_answer(links)
+    await callback.message.answer(answer, reply_markup=kb.links_btm)
 
 # ------------------------------------------------------------
 async def get_token_and_db_id(message: Message):

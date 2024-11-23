@@ -76,8 +76,7 @@ async def reg_notion_token(message: Message, state: FSMContext):
 
 async def reg_database_id(message: Message, state: FSMContext, bot: Bot):
     try:
-        # animation = "https://www.google.com/url?sa=i&url=https%3A%2F%2Fgifer.com%2Fen%2Fgifs%2Fwait&psig=AOvVaw129VUyJTWajLiM4J-mGqNr&ust=1732465982821000&source=images&cd=vfe&opi=89978449&ved=0CBMQjRxqFwoTCICS8vDw8okDFQAAAAAdAAAAABAE"
-        # msg = await message.answer_animation(animation, caption="Please wait, fetching data...")
+        st = await bot.send_sticker(chat_id=message.chat.id, sticker='CAACAgIAAxkBAAENM-xnQg5RjDibtQPq35QZYWND9jdPTAAClgoAAmXXSEqeC5Vjb_xP4DYE')
         client = Client(auth=message.text)
         user=client.users.me()
         import time
@@ -85,26 +84,30 @@ async def reg_database_id(message: Message, state: FSMContext, bot: Bot):
         await state.update_data(notion_token=message.text)
         await state.set_state(Reg.database_id)
         answer = "Enter your Notion database ID"
-        # await bot.delete_message(msg.from_user.id, msg.message.message_id)
+        await bot.delete_message(message.chat.id, st.message_id)
         await message.answer(answer, reply_markup=ReplyKeyboardRemove())
     except:
+        await bot.delete_message(message.chat.id, st.message_id)
         await state.set_state(Reg.notion_token)
         answer = "Your token is invalid\nEnter your Notion token again"
         await message.answer(answer, reply_markup=ReplyKeyboardRemove())
 
-async def reg_finish(message: Message, state: FSMContext):
+async def reg_finish(message: Message, state: FSMContext, bot: Bot):
     try:
+        st = await bot.send_sticker(chat_id=message.chat.id, sticker='CAACAgIAAxkBAAENM-xnQg5RjDibtQPq35QZYWND9jdPTAAClgoAAmXXSEqeC5Vjb_xP4DYE')
         token = await state.get_value('notion_token')
         client = Client(auth=token)
         db = client.databases.retrieve(message.text)
         await state.update_data(database_id=message.text)
         data = await state.get_data()
         response = await rq.register_user(data)
+        await bot.delete_message(message.chat.id, st.message_id)
         if response:
             await message.answer(f'You have successfully registered.\nFirstname: <b>{data["first_name"]}</b>\nLastname: {data["last_name"]}\nPhone number: {data["phone_number"]}\nDatabase ID: {data["database_id"]}\nNotion token: {data["notion_token"]}', reply_markup=kb.main_menu)
         else: await message.answer("You have already registered", reply_markup=kb.main_menu)
         await state.clear()
     except: 
+        await bot.delete_message(message.chat.id, st.message_id)
         await state.set_state(Reg.database_id)
         answer = "Your database ID is invalid\nEnter your database ID again"
         await message.answer(answer, reply_markup=ReplyKeyboardRemove())
